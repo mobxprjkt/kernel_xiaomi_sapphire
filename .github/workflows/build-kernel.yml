@@ -115,13 +115,14 @@ jobs:
 
           test -x "$CLANG_DIR/bin/clang"
 
+          export PATH="$CLANG_DIR/bin:$PATH"
           echo "$CLANG_DIR/bin" >> "$GITHUB_PATH"
 
           echo "CLANG_DIR=$CLANG_DIR" >> "$GITHUB_ENV"
 
-          clang --version
+          "$CLANG_DIR/bin/clang" --version
 
-          if ! clang --version | grep -q "522817"; then
+          if ! "$CLANG_DIR/bin/clang" --version | grep -q "522817"; then
             echo "ERROR: Wrong Clang version!"
             exit 1
           fi
@@ -134,6 +135,7 @@ jobs:
         run: |
           set -e
 
+          export PATH="$CLANG_DIR/bin:$PATH"
           clang --version
           ld.lld --version
           llvm-ar --version
@@ -165,6 +167,8 @@ jobs:
 
           test -f "arch/arm64/configs/$DEFCONFIG"
 
+          export PATH="$CLANG_DIR/bin:$PATH"
+
           make O=out \
             ARCH=arm64 \
             LLVM=1 \
@@ -188,6 +192,8 @@ jobs:
           set -e
           set -o pipefail
 
+          export PATH="$CLANG_DIR/bin:$PATH"
+
           make -j"$(nproc)" O=out \
             ARCH=arm64 \
             LLVM=1 \
@@ -206,6 +212,8 @@ jobs:
           set -e
           set -o pipefail
 
+          export PATH="$CLANG_DIR/bin:$PATH"
+
           make -j"$(nproc)" O=out \
             ARCH=arm64 \
             LLVM=1 \
@@ -223,6 +231,8 @@ jobs:
         run: |
           set -e
           set -o pipefail
+
+          export PATH="$CLANG_DIR/bin:$PATH"
 
           make -j"$(nproc)" O=out \
             ARCH=arm64 \
@@ -296,18 +306,18 @@ jobs:
 
           properties() {
           kernel.string=Sapphire AOSP Clang Kernel
-          do.devicecheck=1
-          do.modules=0
-          do.systemless=0
-          do.cleanup=1
-          do.cleanuponabort=0
-          device.name1=sapphire
-          device.name2=sapphiren
-          device.name3=
-          device.name4=
-          device.name5=
-          supported.versions=
-          supported.patchlevels=
+do.devicecheck=1
+do.modules=0
+do.systemless=0
+do.cleanup=1
+do.cleanuponabort=0
+device.name1=sapphire
+device.name2=sapphiren
+device.name3=
+device.name4=
+device.name5=
+supported.versions=
+supported.patchlevels=
           }
 
           block=boot
