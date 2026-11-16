@@ -92,6 +92,11 @@ no-header-test += asm/uctx.h
 no-header-test += asm/fbio.h
 endif
 
+# Techpack UAPI headers (audio, display) are consumed by the vendor HALs
+# together with their own headers, they are not self-contained
+no-header-test += audio/%
+no-header-test += display/%
+
 # asm-generic/*.h is used by asm/*.h, and should not be included directly
 no-header-test += asm-generic/%
 
