@@ -1,5 +1,5 @@
 
-name: Sapphire | Full Clang Kernel Build
+name: luna | Sapphire Kernel Build
 
 on:
   workflow_dispatch:
@@ -20,12 +20,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: sapphire-kernel-${{ inputs.branch }}
+  group: luna-sapphire-${{ inputs.branch }}
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Sapphire - AOSP Clang r522817
+    name: luna - AOSP Clang r522817
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -33,16 +33,20 @@ jobs:
       ARCH: arm64
       SUBARCH: arm64
       DEFCONFIG: vendor/sapphire_defconfig
-      KBUILD_BUILD_USER: mobxprjkt
-      KBUILD_BUILD_HOST: GitHub-Actions
+
+      KBUILD_BUILD_USER: luna
+      KBUILD_BUILD_HOST: Sapphire
       KBUILD_BUILD_VERSION: 1
+
+      LOCALVERSION: "-luna"
       LLVM: "1"
       LLVM_IAS: "1"
 
     steps:
-      # ==============================================
+
+      # ==========================================
       # CHECKOUT SOURCE
-      # ==============================================
+      # ==========================================
 
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
@@ -55,27 +59,26 @@ jobs:
       - name: Kernel Information
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           echo "================================"
-          echo "DEVICE  : XIAOMI SAPPHIRE"
-          echo "KERNEL  : $(make kernelversion)"
-          echo "BRANCH  : ${{ inputs.branch }}"
-          echo "COMMIT  : $(git rev-parse --short HEAD)"
-          echo "DEFCONFIG: $DEFCONFIG"
+          echo "KERNEL   : luna"
+          echo "DEVICE   : Redmi Note 13 4G"
+          echo "CODENAME : Sapphire / SapphireN"
+          echo "BRANCH   : ${{ inputs.branch }}"
+          echo "COMMIT   : $(git rev-parse --short HEAD)"
+          echo "KERNEL   : $(make kernelversion)"
           echo "================================"
 
-          echo "## Kernel Information" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Device: Sapphire" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Branch: ${{ inputs.branch }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Commit: $(git rev-parse --short HEAD)" >> "$GITHUB_STEP_SUMMARY"
-
-      # ==============================================
-      # DEPENDENCIES
-      # ==============================================
+      # ==========================================
+      # INSTALL DEPENDENCIES
+      # ==========================================
 
       - name: Install Dependencies
+        shell: bash
         run: |
+          set -euo pipefail
+
           sudo apt-get update
 
           sudo apt-get install -y \
@@ -103,9 +106,9 @@ jobs:
             gcc-arm-linux-gnueabi \
             binutils-arm-linux-gnueabi
 
-      # ==============================================
-      # AOSP CLANG r522817
-      # ==============================================
+      # ==========================================
+      # DOWNLOAD AOSP CLANG r522817
+      # ==========================================
 
       - name: Download AOSP Clang r522817
         shell: bash
@@ -119,11 +122,10 @@ jobs:
 
           URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz"
 
-          echo "Downloading AOSP Clang r522817..."
-
           curl -fL \
             --retry 5 \
             --retry-delay 3 \
+            --retry-all-errors \
             "$URL" \
             -o "$CLANG_ARCHIVE"
 
@@ -136,14 +138,11 @@ jobs:
           echo "$CLANG_DIR/bin" >> "$GITHUB_PATH"
           echo "CLANG_DIR=$CLANG_DIR" >> "$GITHUB_ENV"
 
-          echo "========== CLANG =========="
           "$CLANG_DIR/bin/clang" --version
-          echo "========== LLD =========="
-          "$CLANG_DIR/bin/ld.lld" --version
 
-      # ==============================================
-      # TOOLCHAIN VERIFICATION
-      # ==============================================
+      # ==========================================
+      # VERIFY TOOLCHAIN
+      # ==========================================
 
       - name: Verify Toolchain
         shell: bash
@@ -152,28 +151,18 @@ jobs:
 
           export PATH="$CLANG_DIR/bin:$PATH"
 
-          for tool in \
-            clang \
-            clang++ \
-            ld.lld \
-            llvm-ar \
-            llvm-nm \
-            llvm-objcopy \
-            llvm-objdump \
-            llvm-readelf \
-            llvm-strip
-          do
+          for tool in clang clang++ ld.lld llvm-ar \
+                      llvm-nm llvm-objcopy llvm-objdump \
+                      llvm-readelf llvm-strip; do
             command -v "$tool"
           done
 
           clang --version
           ld.lld --version
 
-          echo "AOSP Clang toolchain verified!"
-
-      # ==============================================
+      # ==========================================
       # VALIDATE SOURCE
-      # ==============================================
+      # ==========================================
 
       - name: Validate Kernel Source
         shell: bash
@@ -184,34 +173,26 @@ jobs:
           test -d arch/arm64
           test -f "arch/arm64/configs/$DEFCONFIG"
 
-          echo "Defconfig found:"
-          echo "arch/arm64/configs/$DEFCONFIG"
+          echo "Kernel source validated!"
 
-          echo "========== SOURCE CHECK =========="
-
-          if ! grep -q "CONFIG_ARM64" \
-            arch/arm64/Kconfig; then
-            echo "Warning: ARM64 Kconfig check needs review"
-          fi
-
-      # ==============================================
+      # ==========================================
       # CLEAN BUILD
-      # ==============================================
+      # ==========================================
 
       - name: Clean Build
         if: inputs.clean_build
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
           rm -rf out
           make mrproper
 
           echo "Clean build completed!"
 
-      # ==============================================
-      # BUILD ENVIRONMENT
-      # ==============================================
+      # ==========================================
+      # SETUP BUILD ENVIRONMENT
+      # ==========================================
 
       - name: Setup Build Environment
         shell: bash
@@ -223,9 +204,9 @@ jobs:
           echo "KERNEL_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
           echo "OUT_DIR=$GITHUB_WORKSPACE/out" >> "$GITHUB_ENV"
 
-      # ==============================================
-      # CONFIGURE KERNEL
-      # ==============================================
+      # ==========================================
+      # CONFIGURE DEFCONFIG
+      # ==========================================
 
       - name: Configure Sapphire Defconfig
         shell: bash
@@ -245,17 +226,47 @@ jobs:
 
           test -s out/.config
 
-          echo "========== DEFCONFIG =========="
+      # ==========================================
+      # PATCH KERNEL NAME
+      # ==========================================
 
+      - name: Apply luna Kernel Name
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CONFIG="out/.config"
+
+          # Kernel release suffix
+          scripts/config --file "$CONFIG" \
+            --set-str LOCALVERSION "-luna"
+
+          # Disable automatic Git hash and dirty suffix
+          scripts/config --file "$CONFIG" \
+            -d LOCALVERSION_AUTO
+
+          # Ensure generated config is updated
+          make O=out ARCH=arm64 olddefconfig
+
+          # Export build identity
+          echo "KBUILD_BUILD_USER=luna" >> "$GITHUB_ENV"
+          echo "KBUILD_BUILD_HOST=Sapphire" >> "$GITHUB_ENV"
+          echo "LOCALVERSION=-luna" >> "$GITHUB_ENV"
+
+          # Verify
           grep -E \
-            'CONFIG_ARM64=|CONFIG_ARCH_QCOM=|CONFIG_MODULES=|CONFIG_LOCALVERSION=' \
+            'CONFIG_LOCALVERSION=|CONFIG_LOCALVERSION_AUTO=' \
             out/.config || true
 
-      # ==============================================
-      # KERNEL BUILD
-      # ==============================================
+          rm -f out/include/config/kernel.release
 
-      - name: Build Kernel Image, DTBs and Modules
+          echo "luna kernel identity configured!"
+
+      # ==========================================
+      # BUILD IMAGE ONLY
+      # ==========================================
+
+      - name: Build luna Kernel Image
         shell: bash
         run: |
           set -euo pipefail
@@ -264,7 +275,13 @@ jobs:
 
           JOBS="$(nproc)"
 
-          echo "Building with $JOBS jobs..."
+          echo "================================"
+          echo "KERNEL      : luna"
+          echo "COMPILER    : AOSP Clang r522817"
+          echo "TARGET      : Image"
+          echo "COMPRESSION : NONE"
+          echo "JOBS        : $JOBS"
+          echo "================================"
 
           make -j"$JOBS" O=out \
             ARCH=arm64 \
@@ -273,57 +290,56 @@ jobs:
             LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            Image.gz \
-            dtbs \
-            modules \
-            2>&1 | tee build.log
+            Image 2>&1 | tee build.log
 
-          echo "Kernel build completed!"
+          IMAGE="out/arch/arm64/boot/Image"
 
-      # ==============================================
-      # VERIFY OUTPUT
-      # ==============================================
+          test -s "$IMAGE"
 
-      - name: Verify Build Output
+          echo "========== IMAGE =========="
+
+          ls -lh "$IMAGE"
+          file "$IMAGE"
+          sha256sum "$IMAGE"
+
+      # ==========================================
+      # VERIFY KERNEL RELEASE
+      # ==========================================
+
+      - name: Verify luna Kernel Release
         shell: bash
         run: |
           set -euo pipefail
 
-          IMAGE="out/arch/arm64/boot/Image.gz"
+          RELEASE_FILE="out/include/config/kernel.release"
 
-          if [ ! -s "$IMAGE" ]; then
-            echo "ERROR: Image.gz missing!"
+          if [ ! -s "$RELEASE_FILE" ]; then
+            echo "ERROR: Kernel release missing!"
             exit 1
           fi
 
-          echo "========== KERNEL IMAGE =========="
-          ls -lh "$IMAGE"
+          RELEASE="$(cat "$RELEASE_FILE")"
 
-          echo "========== DTBS =========="
+          echo "Kernel release: $RELEASE"
 
-          DTB_DIR="out/arch/arm64/boot/dts"
+          case "$RELEASE" in
+            *-luna) ;;
+            *)
+              echo "ERROR: luna suffix missing!"
+              exit 1
+              ;;
+          esac
 
-          if [ -d "$DTB_DIR" ]; then
-            find "$DTB_DIR" -type f -name "*.dtb" -print
-          else
-            echo "No DTB directory found."
+          if echo "$RELEASE" | grep -Eq -- '-g[0-9a-f]{7,}|\+$'; then
+            echo "ERROR: Git suffix detected!"
+            exit 1
           fi
 
-          echo "========== MODULES =========="
+          echo "luna kernel release verified!"
 
-          find out -type f -name "*.ko" -print || true
-
-          echo "========== CONFIG =========="
-
-          grep -E \
-            'CONFIG_LOCALVERSION=|CONFIG_MODULES=|CONFIG_ARCH_QCOM=' \
-            out/.config || true
-
-          sha256sum "$IMAGE"
-
-      # ==============================================
-      # DOWNLOAD ANYKERNEL3
-      # ==============================================
+      # ==========================================
+      # CLONE ANYKERNEL3
+      # ==========================================
 
       - name: Clone AnyKernel3
         shell: bash
@@ -336,50 +352,52 @@ jobs:
 
           test -f anykernel/tools/ak3-core.sh
 
-          echo "AnyKernel3 downloaded!"
-
-      # ==============================================
+      # ==========================================
       # CONFIGURE ANYKERNEL3
-      # ==============================================
+      # ==========================================
 
-      - name: Configure Sapphire AnyKernel3
+      - name: Configure luna AnyKernel3
         shell: bash
         run: |
           set -euo pipefail
 
+          IMAGE="out/arch/arm64/boot/Image"
+
+          test -s "$IMAGE"
+
           cat > anykernel/anykernel.sh <<'EOF'
           #!/sbin/sh
 
-          # AnyKernel3
-          # Device: Xiaomi Redmi Note 13 4G
-          # Codename: Sapphire
-          # Compiler: AOSP Clang r522817
-          # Root: None
+          # ==========================================
+          # luna KERNEL
+          # Xiaomi Redmi Note 13 4G
+          # Sapphire / SapphireN
+          # AOSP Clang r522817
+          # Image Uncompressed
+          # Root None
+          # ==========================================
 
-          properties() {
-            kernel.string=Sapphire AOSP Clang Kernel
-            do.devicecheck=1
-            do.modules=0
-            do.systemless=0
-            do.cleanup=1
-            do.cleanuponabort=0
+          properties() { '
+          kernel.string=luna Kernel
+          do.devicecheck=1
+          do.modules=0
+          do.systemless=0
+          do.cleanup=1
+          do.cleanuponabort=0
 
-            device.name1=sapphire
-            device.name2=sapphiren
-            device.name3=
-            device.name4=
-            device.name5=
+          device.name1=sapphire
+          device.name2=sapphiren
 
-            supported.versions=
-            supported.patchlevels=
-          }
+          supported.versions=
+          supported.patchlevels=
+          '
 
           block=boot
           is_slot_device=1
           ramdisk_compression=auto
           patch_vbmeta_flag=auto
 
-          kernel=Image.gz
+          kernel=Image
 
           . tools/ak3-core.sh
 
@@ -389,160 +407,129 @@ jobs:
 
           chmod 755 anykernel/anykernel.sh
 
-          cp out/arch/arm64/boot/Image.gz \
-            anykernel/Image.gz
+          cp "$IMAGE" anykernel/Image
 
-          test -s anykernel/Image.gz
-          test -s anykernel/anykernel.sh
+          rm -f anykernel/Image.gz
 
-          echo "AnyKernel3 configured!"
+          test -s anykernel/Image
 
-      # ==============================================
-      # PACKAGE FLASHABLE ZIP
-      # ==============================================
+          echo "luna AnyKernel3 configured!"
 
-      - name: Create Flashable ZIP
+      # ==========================================
+      # CREATE FLASHABLE ZIP
+      # ==========================================
+
+      - name: Create luna Flashable ZIP
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p release
 
+          ZIP_NAME="luna-Sapphire-AOSP-Clang-r522817.zip"
+
           cd anykernel
 
-          zip -r9 \
-            "../release/Sapphire-AOSP-Clang-r522817-AnyKernel3.zip" \
-            . \
+          zip -r9 "../release/$ZIP_NAME" . \
             -x ".git/*" \
-            -x "*.git*"
+            -x "*.git*" \
+            -x ".github/*"
 
           cd ..
 
-          ZIP="release/Sapphire-AOSP-Clang-r522817-AnyKernel3.zip"
+          ZIP="release/$ZIP_NAME"
 
           test -s "$ZIP"
 
           unzip -t "$ZIP"
 
+          echo "========== FLASHABLE ZIP =========="
+
           ls -lh "$ZIP"
+          sha256sum "$ZIP"
 
-      # ==============================================
-      # COLLECT KERNEL ARTIFACTS
-      # ==============================================
+      # ==========================================
+      # VERIFY FLASHABLE ZIP
+      # ==========================================
 
-      - name: Collect Kernel Artifacts
+      - name: Verify luna Package
         shell: bash
         run: |
           set -euo pipefail
 
-          mkdir -p release/Kernel-Output/dtbs
-          mkdir -p release/Kernel-Output/modules
+          ZIP="release/luna-Sapphire-AOSP-Clang-r522817.zip"
 
-          cp out/arch/arm64/boot/Image.gz \
-            release/Kernel-Output/
+          unzip -p "$ZIP" anykernel.sh \
+            | grep -q 'kernel=Image'
 
-          cp out/.config \
-            release/Kernel-Output/kernel.config
+          unzip -Z1 "$ZIP" | grep -Fxq "Image"
 
-          cp build.log \
-            release/Kernel-Output/
-
-          DTB_DIR="out/arch/arm64/boot/dts"
-
-          if [ -d "$DTB_DIR" ]; then
-            find "$DTB_DIR" -type f -name "*.dtb" \
-              -exec cp --parents {} release/Kernel-Output/dtbs/ \;
+          if unzip -Z1 "$ZIP" | grep -q 'Image.gz'; then
+            echo "ERROR: Image.gz found!"
+            exit 1
           fi
 
-          find out -type f -name "*.ko" \
-            -exec cp --parents {} release/Kernel-Output/modules/ \;
+          echo "luna package verified!"
 
-          {
-            echo "Device: Xiaomi Redmi Note 13 4G"
-            echo "Codename: Sapphire"
-            echo "Kernel: $(make kernelversion)"
-            echo "Compiler: AOSP Clang r522817"
-            echo "Architecture: ARM64"
-            echo "Defconfig: $DEFCONFIG"
-            echo "Root: None"
-            echo "Packaging: AnyKernel3"
-            echo "Branch: ${{ inputs.branch }}"
-            echo "Commit: $(git rev-parse HEAD)"
-            echo "Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          } > release/Kernel-Output/BUILD_INFO.txt
-
-          echo "Artifacts collected!"
-
-      # ==============================================
+      # ==========================================
       # UPLOAD FLASHABLE ZIP
-      # ==============================================
+      # ==========================================
 
-      - name: Upload Flashable ZIP
+      - name: Upload luna Flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: Sapphire-AnyKernel3-Clang-r522817
-          path: release/Sapphire-AOSP-Clang-r522817-AnyKernel3.zip
+          name: luna-Sapphire-AnyKernel3
+          path: release/luna-Sapphire-AOSP-Clang-r522817.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
 
-      # ==============================================
-      # UPLOAD FULL KERNEL OUTPUT
-      # ==============================================
-
-      - name: Upload Full Kernel Output
-        uses: actions/upload-artifact@v4
-        with:
-          name: Sapphire-Kernel-Output-Clang-r522817
-          path: release/Kernel-Output/
-          if-no-files-found: error
-          compression-level: 6
-          retention-days: 30
-
-      # ==============================================
-      # UPLOAD BUILD LOGS ON FAILURE
-      # ==============================================
+      # ==========================================
+      # UPLOAD BUILD LOGS
+      # ==========================================
 
       - name: Upload Build Logs
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: Sapphire-Build-Logs
+          name: luna-Build-Logs
           path: |
             build.log
             out/.config
+            out/include/config/kernel.release
           if-no-files-found: ignore
           retention-days: 7
 
-      # ==============================================
+      # ==========================================
       # BUILD SUMMARY
-      # ==============================================
+      # ==========================================
 
       - name: Build Summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## Sapphire Kernel Build"
+            echo "## luna Kernel Build"
             echo ""
             echo "| Property | Value |"
             echo "|---|---|"
-            echo "| Device | Xiaomi Redmi Note 13 4G |"
-            echo "| Codename | Sapphire |"
-            echo "| Kernel | $(make kernelversion 2>/dev/null || echo Unknown) |"
+            echo "| Kernel Name | luna |"
+            echo "| Device | Redmi Note 13 4G |"
+            echo "| Codename | Sapphire / SapphireN |"
             echo "| Compiler | AOSP Clang r522817 |"
             echo "| Architecture | ARM64 |"
             echo "| Defconfig | $DEFCONFIG |"
+            echo "| Target | Image |"
+            echo "| Compression | Uncompressed |"
             echo "| Root | None |"
-            echo "| Packaging | AnyKernel3 |"
+            echo "| Installer | AnyKernel3 |"
             echo "| Branch | ${{ inputs.branch }} |"
+            echo "| Commit | $(git rev-parse --short HEAD) |"
             echo ""
-          } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ -s release/Sapphire-AOSP-Clang-r522817-AnyKernel3.zip ]; then
-            echo "### Flashable ZIP created successfully" \
-              >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "### Build failed or ZIP missing" \
-              >> "$GITHUB_STEP_SUMMARY"
-          fi
+            if [ -s release/luna-Sapphire-AOSP-Clang-r522817.zip ]; then
+              echo "### luna ZIP created successfully"
+            else
+              echo "### Build failed or ZIP missing"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
