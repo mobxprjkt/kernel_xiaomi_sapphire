@@ -1,5 +1,5 @@
 
-name: luna | Sapphire Kernel Build
+name: LUNA | Sapphire Full Clang Kernel Build
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
         type: string
 
       clean_build:
-        description: Clean build
+        description: Clean kernel output
         required: true
         default: true
         type: boolean
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   build:
-    name: luna - AOSP Clang r522817
+    name: LUNA - AOSP Clang r522817
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
@@ -34,13 +34,17 @@ jobs:
       SUBARCH: arm64
       DEFCONFIG: vendor/sapphire_defconfig
 
-      KBUILD_BUILD_USER: luna
+      KBUILD_BUILD_USER: LUNA
       KBUILD_BUILD_HOST: Sapphire
       KBUILD_BUILD_VERSION: 1
 
-      LOCALVERSION: "-luna"
       LLVM: "1"
       LLVM_IAS: "1"
+
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 5G
+      CCACHE_COMPILERCHECK: content
+      CCACHE_BASEDIR: ${{ github.workspace }}
 
     steps:
 
@@ -62,13 +66,23 @@ jobs:
           set -euo pipefail
 
           echo "================================"
-          echo "KERNEL   : luna"
+          echo "KERNEL   : LUNA"
           echo "DEVICE   : Redmi Note 13 4G"
           echo "CODENAME : Sapphire / SapphireN"
           echo "BRANCH   : ${{ inputs.branch }}"
           echo "COMMIT   : $(git rev-parse --short HEAD)"
-          echo "KERNEL   : $(make kernelversion)"
+          echo "VERSION  : $(make kernelversion)"
+          echo "DEFCONFIG: $DEFCONFIG"
           echo "================================"
+
+          {
+            echo "## LUNA Kernel Information"
+            echo "- Device: Redmi Note 13 4G"
+            echo "- Codename: Sapphire / SapphireN"
+            echo "- Branch: ${{ inputs.branch }}"
+            echo "- Commit: $(git rev-parse --short HEAD)"
+            echo "- Compiler: AOSP Clang r522817"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # ==========================================
       # INSTALL DEPENDENCIES
@@ -107,7 +121,17 @@ jobs:
             binutils-arm-linux-gnueabi
 
       # ==========================================
-      # DOWNLOAD AOSP CLANG r522817
+      # RESTORE AOSP CLANG CACHE
+      # ==========================================
+
+      - name: Restore AOSP Clang Cache
+        uses: actions/cache@v4
+        with:
+          path: .toolchains/clang
+          key: luna-clang-r522817-linux-v1
+
+      # ==========================================
+      # DOWNLOAD CLANG IF CACHE MISSING
       # ==========================================
 
       - name: Download AOSP Clang r522817
@@ -115,21 +139,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          CLANG_DIR="$RUNNER_TEMP/clang"
-          CLANG_ARCHIVE="$RUNNER_TEMP/clang-r522817.tar.gz"
+          CLANG_DIR="$GITHUB_WORKSPACE/.toolchains/clang"
 
           mkdir -p "$CLANG_DIR"
 
-          URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz"
+          if [ -x "$CLANG_DIR/bin/clang" ] && \
+             [ -x "$CLANG_DIR/bin/ld.lld" ] && \
+             [ -x "$CLANG_DIR/bin/llvm-ar" ]; then
 
-          curl -fL \
-            --retry 5 \
-            --retry-delay 3 \
-            --retry-all-errors \
-            "$URL" \
-            -o "$CLANG_ARCHIVE"
+            echo "Clang cache restored!"
+            echo "Skipping download."
 
-          tar -xzf "$CLANG_ARCHIVE" -C "$CLANG_DIR"
+          else
+
+            echo "Clang cache missing."
+            echo "Downloading AOSP Clang r522817..."
+
+            rm -rf "$CLANG_DIR"
+            mkdir -p "$CLANG_DIR"
+
+            URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz"
+
+            curl -fL \
+              --retry 5 \
+              --retry-delay 3 \
+              --retry-all-errors \
+              "$URL" \
+              -o "$RUNNER_TEMP/clang-r522817.tar.gz"
+
+            tar -xzf "$RUNNER_TEMP/clang-r522817.tar.gz" \
+              -C "$CLANG_DIR"
+
+          fi
 
           test -x "$CLANG_DIR/bin/clang"
           test -x "$CLANG_DIR/bin/ld.lld"
@@ -144,21 +185,67 @@ jobs:
       # VERIFY TOOLCHAIN
       # ==========================================
 
-      - name: Verify Toolchain
+      - name: Verify AOSP Clang
         shell: bash
         run: |
           set -euo pipefail
 
           export PATH="$CLANG_DIR/bin:$PATH"
 
-          for tool in clang clang++ ld.lld llvm-ar \
-                      llvm-nm llvm-objcopy llvm-objdump \
-                      llvm-readelf llvm-strip; do
+          for tool in \
+            clang \
+            clang++ \
+            ld.lld \
+            llvm-ar \
+            llvm-nm \
+            llvm-objcopy \
+            llvm-objdump \
+            llvm-readelf \
+            llvm-strip
+          do
             command -v "$tool"
           done
 
           clang --version
           ld.lld --version
+
+          echo "AOSP Clang r522817 verified!"
+
+      # ==========================================
+      # RESTORE CCACHE
+      # ==========================================
+
+      - name: Restore LUNA CCache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: luna-ccache-${{ runner.os }}-${{ inputs.branch }}-${{ github.sha }}
+          restore-keys: |
+            luna-ccache-${{ runner.os }}-${{ inputs.branch }}-
+            luna-ccache-${{ runner.os }}-
+
+      # ==========================================
+      # CONFIGURE CCACHE
+      # ==========================================
+
+      - name: Configure CCache
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$CCACHE_DIR"
+
+          ccache --set-config=max_size=5G
+          ccache --set-config=compiler_check=content
+          ccache --set-config=base_dir="$GITHUB_WORKSPACE"
+
+          ccache --zero-stats
+
+          echo "========== CCACHE =========="
+
+          ccache --version
+          ccache --show-config
+          ccache --show-stats
 
       # ==========================================
       # VALIDATE SOURCE
@@ -188,7 +275,9 @@ jobs:
           rm -rf out
           make mrproper
 
-          echo "Clean build completed!"
+          echo "Kernel output cleaned!"
+          echo "Clang cache preserved!"
+          echo "CCache preserved!"
 
       # ==========================================
       # SETUP BUILD ENVIRONMENT
@@ -220,53 +309,59 @@ jobs:
             SUBARCH=arm64 \
             LLVM=1 \
             LLVM_IAS=1 \
+            CC="ccache clang" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             "$DEFCONFIG"
 
           test -s out/.config
 
+          echo "Defconfig configured!"
+
       # ==========================================
-      # PATCH KERNEL NAME
+      # APPLY LUNA KERNEL IDENTITY
       # ==========================================
 
-      - name: Apply luna Kernel Name
+      - name: Apply LUNA Kernel Identity
         shell: bash
         run: |
           set -euo pipefail
 
           CONFIG="out/.config"
 
-          # Kernel release suffix
+          # Set suffix exactly once
           scripts/config --file "$CONFIG" \
-            --set-str LOCALVERSION "-luna"
+            --set-str LOCALVERSION "-LUNA"
 
-          # Disable automatic Git hash and dirty suffix
+          # Disable automatic Git hash
           scripts/config --file "$CONFIG" \
             -d LOCALVERSION_AUTO
 
-          # Ensure generated config is updated
-          make O=out ARCH=arm64 olddefconfig
+          # Reconfigure kernel
+          make O=out \
+            ARCH=arm64 \
+            SUBARCH=arm64 \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            CC="ccache clang" \
+            olddefconfig
 
-          # Export build identity
-          echo "KBUILD_BUILD_USER=luna" >> "$GITHUB_ENV"
-          echo "KBUILD_BUILD_HOST=Sapphire" >> "$GITHUB_ENV"
-          echo "LOCALVERSION=-luna" >> "$GITHUB_ENV"
-
-          # Verify
-          grep -E \
-            'CONFIG_LOCALVERSION=|CONFIG_LOCALVERSION_AUTO=' \
-            out/.config || true
-
+          # Remove stale kernel release
           rm -f out/include/config/kernel.release
 
-          echo "luna kernel identity configured!"
+          echo "========== LUNA CONFIG =========="
+
+          grep -E \
+            'CONFIG_LOCALVERSION=|CONFIG_LOCALVERSION_AUTO=' \
+            "$CONFIG" || true
+
+          echo "Kernel identity configured!"
 
       # ==========================================
       # BUILD IMAGE ONLY
       # ==========================================
 
-      - name: Build luna Kernel Image
+      - name: Build LUNA Kernel Image
         shell: bash
         run: |
           set -euo pipefail
@@ -276,10 +371,11 @@ jobs:
           JOBS="$(nproc)"
 
           echo "================================"
-          echo "KERNEL      : luna"
+          echo "KERNEL      : LUNA"
           echo "COMPILER    : AOSP Clang r522817"
           echo "TARGET      : Image"
           echo "COMPRESSION : NONE"
+          echo "CCACHE      : ENABLED"
           echo "JOBS        : $JOBS"
           echo "================================"
 
@@ -288,6 +384,7 @@ jobs:
             SUBARCH=arm64 \
             LLVM=1 \
             LLVM_IAS=1 \
+            CC="ccache clang" \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             Image 2>&1 | tee build.log
@@ -296,7 +393,7 @@ jobs:
 
           test -s "$IMAGE"
 
-          echo "========== IMAGE =========="
+          echo "========== IMAGE OUTPUT =========="
 
           ls -lh "$IMAGE"
           file "$IMAGE"
@@ -306,36 +403,52 @@ jobs:
       # VERIFY KERNEL RELEASE
       # ==========================================
 
-      - name: Verify luna Kernel Release
+      - name: Verify LUNA Kernel Release
         shell: bash
         run: |
           set -euo pipefail
 
           RELEASE_FILE="out/include/config/kernel.release"
 
-          if [ ! -s "$RELEASE_FILE" ]; then
-            echo "ERROR: Kernel release missing!"
-            exit 1
-          fi
+          test -s "$RELEASE_FILE"
 
           RELEASE="$(cat "$RELEASE_FILE")"
 
           echo "Kernel release: $RELEASE"
 
-          case "$RELEASE" in
-            *-luna) ;;
-            *)
-              echo "ERROR: luna suffix missing!"
-              exit 1
-              ;;
-          esac
+          # Exactly one LUNA suffix
+          if [[ "$RELEASE" != *-LUNA ]]; then
+            echo "ERROR: LUNA suffix missing!"
+            exit 1
+          fi
 
-          if echo "$RELEASE" | grep -Eq -- '-g[0-9a-f]{7,}|\+$'; then
+          if [[ "$RELEASE" == *-LUNA-LUNA ]]; then
+            echo "ERROR: Duplicate LUNA suffix!"
+            exit 1
+          fi
+
+          if [[ "$RELEASE" == *-g* || "$RELEASE" == *+ ]]; then
             echo "ERROR: Git suffix detected!"
             exit 1
           fi
 
-          echo "luna kernel release verified!"
+          echo "LUNA kernel release verified!"
+
+      # ==========================================
+      # CCACHE STATISTICS
+      # ==========================================
+
+      - name: LUNA CCache Statistics
+        if: always()
+        shell: bash
+        run: |
+          echo "========== CCACHE STATISTICS =========="
+
+          ccache --show-stats || true
+
+          echo "========== CCACHE SIZE =========="
+
+          du -sh "$CCACHE_DIR" || true
 
       # ==========================================
       # CLONE ANYKERNEL3
@@ -356,7 +469,7 @@ jobs:
       # CONFIGURE ANYKERNEL3
       # ==========================================
 
-      - name: Configure luna AnyKernel3
+      - name: Configure LUNA AnyKernel3
         shell: bash
         run: |
           set -euo pipefail
@@ -369,7 +482,7 @@ jobs:
           #!/sbin/sh
 
           # ==========================================
-          # luna KERNEL
+          # LUNA KERNEL
           # Xiaomi Redmi Note 13 4G
           # Sapphire / SapphireN
           # AOSP Clang r522817
@@ -378,7 +491,7 @@ jobs:
           # ==========================================
 
           properties() { '
-          kernel.string=luna Kernel
+          kernel.string=LUNA Kernel
           do.devicecheck=1
           do.modules=0
           do.systemless=0
@@ -413,20 +526,20 @@ jobs:
 
           test -s anykernel/Image
 
-          echo "luna AnyKernel3 configured!"
+          echo "LUNA AnyKernel3 configured!"
 
       # ==========================================
       # CREATE FLASHABLE ZIP
       # ==========================================
 
-      - name: Create luna Flashable ZIP
+      - name: Create LUNA Flashable ZIP
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p release
 
-          ZIP_NAME="luna-Sapphire-AOSP-Clang-r522817.zip"
+          ZIP_NAME="LUNA-Sapphire-AOSP-Clang-r522817.zip"
 
           cd anykernel
 
@@ -449,15 +562,15 @@ jobs:
           sha256sum "$ZIP"
 
       # ==========================================
-      # VERIFY FLASHABLE ZIP
+      # VERIFY FINAL PACKAGE
       # ==========================================
 
-      - name: Verify luna Package
+      - name: Verify LUNA Package
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP="release/luna-Sapphire-AOSP-Clang-r522817.zip"
+          ZIP="release/LUNA-Sapphire-AOSP-Clang-r522817.zip"
 
           unzip -p "$ZIP" anykernel.sh \
             | grep -q 'kernel=Image'
@@ -469,17 +582,17 @@ jobs:
             exit 1
           fi
 
-          echo "luna package verified!"
+          echo "LUNA package verified!"
 
       # ==========================================
       # UPLOAD FLASHABLE ZIP
       # ==========================================
 
-      - name: Upload luna Flashable ZIP
+      - name: Upload LUNA Flashable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: luna-Sapphire-AnyKernel3
-          path: release/luna-Sapphire-AOSP-Clang-r522817.zip
+          name: LUNA-Sapphire-AnyKernel3
+          path: release/LUNA-Sapphire-AOSP-Clang-r522817.zip
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -492,7 +605,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: luna-Build-Logs
+          name: LUNA-Build-Logs
           path: |
             build.log
             out/.config
@@ -501,19 +614,19 @@ jobs:
           retention-days: 7
 
       # ==========================================
-      # BUILD SUMMARY
+      # FINAL BUILD SUMMARY
       # ==========================================
 
-      - name: Build Summary
+      - name: LUNA Build Summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## luna Kernel Build"
+            echo "## LUNA Kernel Build"
             echo ""
             echo "| Property | Value |"
             echo "|---|---|"
-            echo "| Kernel Name | luna |"
+            echo "| Kernel | LUNA |"
             echo "| Device | Redmi Note 13 4G |"
             echo "| Codename | Sapphire / SapphireN |"
             echo "| Compiler | AOSP Clang r522817 |"
@@ -521,14 +634,17 @@ jobs:
             echo "| Defconfig | $DEFCONFIG |"
             echo "| Target | Image |"
             echo "| Compression | Uncompressed |"
+            echo "| CCache | Enabled |"
+            echo "| CCache Size | 5 GB |"
+            echo "| Clang Cache | Enabled |"
             echo "| Root | None |"
             echo "| Installer | AnyKernel3 |"
             echo "| Branch | ${{ inputs.branch }} |"
             echo "| Commit | $(git rev-parse --short HEAD) |"
             echo ""
 
-            if [ -s release/luna-Sapphire-AOSP-Clang-r522817.zip ]; then
-              echo "### luna ZIP created successfully"
+            if [ -s release/LUNA-Sapphire-AOSP-Clang-r522817.zip ]; then
+              echo "### LUNA ZIP created successfully"
             else
               echo "### Build failed or ZIP missing"
             fi
